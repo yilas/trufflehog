@@ -7,6 +7,8 @@ import (
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/trufflesecurity/trufflehog/v3/pkg/cli"
+	"gopkg.in/alecthomas/kingpin.v2"
 )
 
 // TODO: Review light theme styling
@@ -36,19 +38,23 @@ var (
 )
 
 type item struct {
-	title        string
-	description  string
-	isEnterprise bool
+	title       string
+	description string
+	cmd         *kingpin.CmdModel
+}
+
+func (i item) isEnterprise() bool {
+	return i.cmd == nil
 }
 
 func (i item) Title() string {
-	if i.isEnterprise {
+	if i.isEnterprise() {
 		return "🔒 " + i.title
 	}
 	return i.title
 }
 func (i item) Description() string {
-	if i.isEnterprise {
+	if i.isEnterprise() {
 		return i.description + " (Enterprise only)"
 	}
 	return i.description
@@ -68,6 +74,7 @@ type (
 	}
 	sourceSelectMsg struct {
 		selection string
+		cmd       *kingpin.CmdModel
 	}
 )
 
@@ -85,23 +92,23 @@ func newSourceSelectModel() sourceSelectModel {
 	// Make list of items.
 	items := []list.Item{
 		// Open source sources.
-		item{"Git", "Scan git repositories.", false},
-		item{"GitHub", "Scan GitHub repositories and/or organizations.", false},
-		item{"GitLab", "Scan GitLab repositories.", false},
-		item{"Filesystem", "Scan your filesystem by selecting what directories to scan.", false},
-		item{"AWS S3", "Scan Amazon S3 buckets.", false},
-		item{"CircleCI", "Scan CircleCI, a CI/CD platform.", false},
-		item{"Syslog", "Scan syslog, event data logs.", false},
+		item{"Git", "Scan git repositories.", cli.GitScan.Model()},
+		item{"GitHub", "Scan GitHub repositories and/or organizations.", cli.GithubScan.Model()},
+		item{"GitLab", "Scan GitLab repositories.", cli.GitlabScan.Model()},
+		item{"Filesystem", "Scan your filesystem by selecting what directories to scan.", cli.FilesystemScan.Model()},
+		item{"AWS S3", "Scan Amazon S3 buckets.", cli.S3Scan.Model()},
+		item{"CircleCI", "Scan CircleCI, a CI/CD platform.", cli.CircleCiScan.Model()},
+		item{"Syslog", "Scan syslog, event data logs.", cli.SyslogScan.Model()},
 		// Enterprise sources.
-		item{"Artifactory", "Scan JFrog Artifactory packages.", true},
-		item{"BitBucket", "Scan Atlassian's Git-based source code repository hosting service.", true},
-		item{"Buildkite", "Scan Buildkite, a CI/CD platform.", true},
-		item{"Confluence", "Scan Atlassian's web-based wiki and knowledge base.", true},
-		item{"Gerrit", "Scan Gerrit, a code collaboration tool", true},
-		item{"Jenkins ", "Scan Jenkins, a CI/CD platform.", true},
-		item{"Jira", "Scan Atlassian's issue & project tracking software.", true},
-		item{"Slack", "Scan Slack, a messaging and communication platform.", true},
-		item{"Microsoft Teams", "Scan Microsoft Teams, a messaging and communication platform.", true},
+		item{"Artifactory", "Scan JFrog Artifactory packages.", nil},
+		item{"BitBucket", "Scan Atlassian's Git-based source code repository hosting service.", nil},
+		item{"Buildkite", "Scan Buildkite, a CI/CD platform.", nil},
+		item{"Confluence", "Scan Atlassian's web-based wiki and knowledge base.", nil},
+		item{"Gerrit", "Scan Gerrit, a code collaboration tool", nil},
+		item{"Jenkins ", "Scan Jenkins, a CI/CD platform.", nil},
+		item{"Jira", "Scan Atlassian's issue & project tracking software.", nil},
+		item{"Slack", "Scan Slack, a messaging and communication platform.", nil},
+		item{"Microsoft Teams", "Scan Microsoft Teams, a messaging and communication platform.", nil},
 	}
 
 	// Setup list
@@ -170,25 +177,20 @@ func newItemDelegate(keys *delegateKeyMap) list.DefaultDelegate {
 	d := list.NewDefaultDelegate()
 
 	d.UpdateFunc = func(msg tea.Msg, m *list.Model) tea.Cmd {
-		var selectedItem item
-
-		if i, ok := m.SelectedItem().(item); ok {
-			selectedItem = i
-
-		} else {
+		selectedItem, ok := m.SelectedItem().(item)
+		if !ok {
 			return nil
 		}
 
 		if msg, ok := msg.(tea.KeyMsg); ok && key.Matches(msg, keys.choose) {
-			if selectedItem.isEnterprise {
+			if selectedItem.isEnterprise() {
 				return m.NewStatusMessage(errorStatusMessageStyle(
 					"That's an enterprise only source. Learn more at trufflesecurity.com",
 				))
 			}
-
-			return func() tea.Msg { return sourceSelectMsg{selectedItem.title} }
+			// TODO: can we set state without using a tea.Cmd?
+			return func() tea.Msg { return sourceSelectMsg{selectedItem.title, selectedItem.cmd} }
 		}
-
 		return nil
 	}
 
